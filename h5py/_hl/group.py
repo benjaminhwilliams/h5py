@@ -507,7 +507,7 @@ class Group(HLObject, MutableMappingHDF5):
             self.id.links.move(self._e(source), self.id, self._e(dest),
                                lapl=self._lapl, lcpl=self._lcpl)
 
-    def visit(self, func):
+    def visit(self, func, follow_links=False):
         """ Recursively visit all names in this group and subgroups (HDF5 1.8).
 
         You supply a callable (function, method or callable object); it
@@ -520,6 +520,9 @@ class Group(HLObject, MutableMappingHDF5):
         and immediately returns that value from the visit method.  No
         particular order of iteration within groups is guaranteed.
 
+        By default, soft and external links are excluded from the recursion.
+        To include them, set "follow_links=True".
+
         Example:
 
         >>> # List the entire contents of the file
@@ -528,12 +531,29 @@ class Group(HLObject, MutableMappingHDF5):
         >>> f.visit(list_of_names.append)
         """
         with phil:
-            def proxy(name):
-                """ Call the function with the text name, not bytes """
-                return func(self._d(name))
-            return h5o.visit(self.id, proxy)
+            if follow_links:
+                nodes = []
+                def proxy(name):
+                    """ Call the function with the text name, not bytes
 
-    def visititems(self, func):
+                    The function will not be called on nodes already visited."""
+                    name = self._d(name)
+                    node = self[name]
+                    if node not in nodes:
+                        nodes.append(node)
+                        return func(name)
+                    else:
+                        return None
+
+                return self.id.links.visit(proxy)
+
+            else:
+                def proxy(name):
+                    """ Call the function with the text name, not bytes """
+                    return func(self._d(name))
+                return h5o.visit(self.id, proxy)
+
+    def visititems(self, func, follow_links=False):
         """ Recursively visit names and objects in this group (HDF5 1.8).
 
         You supply a callable (function, method or callable object); it
@@ -545,6 +565,9 @@ class Group(HLObject, MutableMappingHDF5):
         Returning None continues iteration, returning anything else stops
         and immediately returns that value from the visit method.  No
         particular order of iteration within groups is guaranteed.
+
+        By default, soft and external links are excluded from the recursion.
+        To include them, set "follow_links=True".
 
         Example:
 
@@ -558,11 +581,29 @@ class Group(HLObject, MutableMappingHDF5):
         >>> f.visititems(func)
         """
         with phil:
-            def proxy(name):
-                """ Use the text name of the object, not bytes """
-                name = self._d(name)
-                return func(name, self[name])
-            return h5o.visit(self.id, proxy)
+            if follow_links:
+                nodes = []
+                def proxy(name):
+                    """ Call the function with the text name, not bytes
+
+                    The function will not be called on nodes already visited."""
+                    name = self._d(name)
+                    node = self[name]
+                    if node not in nodes:
+                        nodes.append(node)
+                        return func(name, self[name])
+                    else:
+                        return None
+
+                return self.id.links.visit(proxy)
+
+            else:
+                def proxy(name):
+                    """ Use the text name of the object, not bytes """
+                    name = self._d(name)
+                    return func(name, self[name])
+
+                return h5o.visit(self.id, proxy)
 
     @with_phil
     def __repr__(self):
